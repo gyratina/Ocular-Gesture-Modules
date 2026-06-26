@@ -8,7 +8,7 @@
 
 import cv2
 import mediapipe as mp
-from mediapipe.tasks import python
+from mediapipe.tasks import python as py
 from mediapipe.tasks.python import vision
 from scipy.spatial import distance as dist
 
@@ -29,30 +29,32 @@ class BlinkDetector:
         )
 
         self.model_path = (
-            "../model_bundle/face_landmarker.task"  # Percorso file del model bundle
+            "model_bundle/face_landmarker.task"  # Percorso file del model bundle
         )
 
         # match che imposta la running mode
         match running_mode:
             case 0:
-                self.running_mode = mp.tasks.vision.RunningMode.IMAGE
+                self.running_mode = vision.RunningMode.IMAGE
 
             case 1:
-                self.running_mode = mp.tasks.vision.RunningMode.VIDEO
+                self.running_mode = vision.RunningMode.VIDEO
 
             case 2:
-                self.running_mode = mp.tasks.vision.RunningMode.LIVE_STREAM
+                self.running_mode = vision.RunningMode.LIVE_STREAM
 
         # Impostazioni del modello di Landmarking facciale
-        BaseOptions = mp.tasks.BaseOptions
-        FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions(
+        BaseOptions = py.BaseOptions
+        FaceLandmarkerOptions = vision.FaceLandmarkerOptions(
             base_options=BaseOptions(model_asset_path=self.model_path),
             running_mode=self.running_mode,
             num_faces=1,
         )
+        FaceLandmarker = vision.FaceLandmarker
 
-        FaceLandmarker = mp.tasks.vision.FaceLandmarker
-        self.land_marker = FaceLandmarker.create_from_options(FaceLandmarkerOptions)
+        self.face_land_marker = FaceLandmarker.create_from_options(
+            FaceLandmarkerOptions
+        )
 
     def close(self):
         self.land_marker.close()
