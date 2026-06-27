@@ -7,10 +7,10 @@
 # file-name: blinkDetector.py
 ###
 
-
 import cv2 as cv
+from pynput.keyboard import Controller, Key
 
-from mio.blinkDetector import BlinkDetector
+from blinkDetector import BlinkDetector
 
 video = cv.VideoCapture(1)
 
@@ -18,7 +18,26 @@ if not video.isOpened():
     print("Impossibile aprire la telecamera.\n")
     exit()
 
-blink_detector = BlinkDetector()  # Istanziamento di BlinkDetector
+# Istanziamento di BlinkDetector
+blink_detector = BlinkDetector()
+
+tastiera = Controller()
+
+
+def on_left_blink():
+    print("Sbattuto Occhio SINISTRO\n")
+    with tastiera.pressed(Key.cmd_l):
+        tastiera.press("a")
+        tastiera.release("a")
+
+
+def on_right_blink():
+    print("Sbattuto Occhio DESTRO\n")
+
+
+blink_detector.on_left_blink_callback = on_left_blink
+blink_detector.on_right_blink_callback = on_right_blink
+
 
 while True:
     status, frame = video.read()
@@ -31,10 +50,8 @@ while True:
 
     blink_detector.process_frame(frame=frame, rgb=rgb_frame)
 
-    # Our operations on the frame come here
-    gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
     # Display the resulting frame
-    cv.imshow("frame", gray)
+    cv.imshow("frame", frame)
     if cv.waitKey(1) == ord("q"):
         break
 

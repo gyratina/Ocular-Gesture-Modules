@@ -9,6 +9,7 @@
 
 
 import time
+from typing import Callable
 
 import mediapipe as mp
 import numpy as np
@@ -34,26 +35,28 @@ class BlinkDetector:
         "P5": 153,  # Palpebra inferiore
         "P6": 144,  # Palpebra inferiore
     }
-    # ? eyes = [left_eye, right_eye]
 
     # Metodo costruttore
-    def __init__(self, ear_threshold=0.25, k_frame_threshold=6, running_mode=1) -> None:
+    def __init__(self, ear_threshold=0.16, k_frame_threshold=3, running_mode=1) -> None:
         self.EAR_THRESHOLD = ear_threshold  # Soglia di apertura dell'occhio
         self.K_FRAME_THRESHOLD = k_frame_threshold  # Soglia del numero di fotogrammi necessari per considerare l'occhio chiuso
 
-        self.blink_counter = 0  # Contatore del numero di chiusura degli occhi
-        self.frameOfBlink_counter = (
-            0  # Contatore di frame nel quale l'occhio è stato chiuso
-        )
+        # Contatori del numero di chiusure degli occhi
+        self.left_blink_counter = 0
+        self.right_blink_counter = 0
 
-        self.on_blink_callback = (
-            None  # Funzione di callback per quando vengono sbattuti gli occhi
-        )
+        # Contatori di frame nel quale l'occhio è stato chiuso
+        self.left_blink_frametime_counter = 0
+        self.right_blink_frametime_counter = 0
 
-        self.model_path = (
-            "model_bundle/face_landmarker.task"  # Percorso file del model bundle
-        )
+        # Funzioni di callback per quando vengono sbattuti gli occhi
+        self.on_left_blink_callback: Callable[[], None] = None
+        self.on_right_blink_callback: Callable[[], None] = None
 
+        # Percorso file del model bundle
+        self.model_path = "face_landmarker.task"
+
+        # Salva il timestamp dell'ultimo timestamp in millisecondi
         self.last_timestamp_ms: int = 0
 
         # match che imposta la running mode
@@ -140,9 +143,31 @@ class BlinkDetector:
             eye_coordinates=right_eye_coordinates,
         )
 
-    def ear_math(self, eye_coordinates) -> float:
-        # TODO: Scrivere il codice che calcola l'EAR
+        # Filtro "Anti-Rumore" per l'occhio Sinistro
+        if sx_ear < self.EAR_THRESHOLD:
+            self.left_blink_frametime_counter += 1
+        elif sx_ear >= self.EAR_THRESHOLD:
+            if self.left_blink_frametime_counter >= self.K_FRAME_THRESHOLD:
+                self.left_blink_counter += 1
+                # Chiamata a funzione di callback
+                if self.on_left_blink_callback is not None:
+                    self.on_left_blink_callback()
 
+            self.left_blink_frametime_counter = 0
+
+        # Filtro "Anti-Rumore" per l'occhio Destro
+        if dx_ear < self.EAR_THRESHOLD:
+            self.right_blink_frametime_counter += 1
+        elif dx_ear >= self.EAR_THRESHOLD:
+            if self.right_blink_frametime_counter >= self.K_FRAME_THRESHOLD:
+                self.right_blink_counter += 1
+                # Chiamata a funzione di callback
+                if self.on_right_blink_callback is not None:
+                    self.on_right_blink_callback()
+
+            self.right_blink_frametime_counter = 0
+
+    def ear_math(self, eye_coordinates) -> float:
         # Macro
         P1 = eye_coordinates["P1"]
         P2 = eye_coordinates["P2"]
