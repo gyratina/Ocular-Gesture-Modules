@@ -6,14 +6,34 @@
 ###
 
 
-import cv2
+import time
+
 import mediapipe as mp
+import numpy as np
 from mediapipe.tasks import python as py
 from mediapipe.tasks.python import vision
 from scipy.spatial import distance as dist
 
 
 class BlinkDetector:
+    left_eye = {
+        "P1": 263,  # Angolo esterno
+        "P2": 385,  # Palpebra superiore
+        "P3": 387,  # Palpebra superiore
+        "P4": 362,  # Angolo interno
+        "P5": 373,  # Palpebra inferiore
+        "P6": 380,  # Palpebra inferiore
+    }
+    right_eye = {
+        "P1": 33,  # Angolo esterno
+        "P2": 160,  # Palpebra superiore
+        "P3": 158,  # Palpebra superiore
+        "P4": 133,  # Angolo interno
+        "P5": 153,  # Palpebra inferiore
+        "P6": 144,  # Palpebra inferiore
+    }
+    eyes = [left_eye, right_eye]
+
     # Metodo costruttore
     def __init__(self, ear_threshold=0.25, k_frame_threshold=6, running_mode=1) -> None:
         self.EAR_THRESHOLD = ear_threshold  # Soglia di apertura dell'occhio
@@ -57,4 +77,36 @@ class BlinkDetector:
         )
 
     def close(self):
-        self.land_marker.close()
+        self.face_land_marker.close()
+
+    def process_frame(self, frame):
+
+        # Fase di preparazione dati
+        height, width, _ = frame.shape
+
+        # ? Approfondisci
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+
+        
+
+        # Fase di esecuzione
+        face_landmarker_result = landmarker.detect_for_video(
+            mp_image, frame_timestamp_ms
+        )
+
+        sx_ear = self.ear_math(
+            landmarks=self.face_land_marker,
+            eye_coordinates=None,
+            height=height,
+            width=width,
+        )
+        sx_ear = self.ear_math(
+            landmarks=self.face_land_marker,
+            eye_coordinates=None,
+            height=height,
+            width=width,
+        )
+
+    def ear_math(self, landmarks, eye_coordinates, height, width) -> float:
+        pass  # TODO: Scrivere il codice che calcola l'EAR

@@ -1,7 +1,6 @@
 import cv2 as cv
-import numpy as np
 
-from diGemini.blinkModule import BlinkDetector
+from mio.blinkDetector import BlinkDetector
 
 video = cv.VideoCapture(1)
 
@@ -9,8 +8,7 @@ if not video.isOpened():
     print("Impossibile aprire la telecamera.\n")
     exit()
 
-blink_detector = BlinkDetector()
-
+blink_detector = BlinkDetector()  # Istanziamento di BlinkDetector
 
 while True:
     status, frame = video.read()
@@ -18,6 +16,8 @@ while True:
     if not status:
         print("Errore, impossibile trovare un fotogramma.")
         break
+
+    blink_detector.process_frame(frame=frame)
 
     # Our operations on the frame come here
     gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
