@@ -1,3 +1,13 @@
+###
+# project: Ocular Gestures Module (OGM)
+# project-start: 2026-06-26 (yyyy-mm-dd)
+# author-username: @gyratina on GitHub
+# author-name: Valerio Di Tommaso
+# author-email: contact.me@valerioditommaso.dev
+# file-name: blinkDetector.py
+###
+
+
 import cv2 as cv
 
 from mio.blinkDetector import BlinkDetector
@@ -17,7 +27,9 @@ while True:
         print("Errore, impossibile trovare un fotogramma.")
         break
 
-    blink_detector.process_frame(frame=frame)
+    rgb_frame = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
+
+    blink_detector.process_frame(frame=frame, rgb=rgb_frame)
 
     # Our operations on the frame come here
     gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)

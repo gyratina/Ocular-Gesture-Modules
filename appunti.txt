@@ -1,0 +1,21 @@
+In  process_frame :
+
+  1. Importare OpenCV: Manca  import cv2  all'inizio del file (visto che usi  cv2.cvtColor ).
+  2. Calcolare il timestamp: Stai passando  frame_timestamp_ms  a  detect_for_video , ma non l'hai ancora definito. Devi calcolarlo (usando  time.time() ).
+  3. Correggere la chiamata del landmarker: Hai scritto  landmarker.detect_for_video , ma il tuo oggetto si chiama  self.face_land_marker .
+  4. Estrarre le coordinate: Una volta ottenuto  face_landmarker_result , devi estrarre la lista di punti (landmarks) usando  face_landmarker_result.face_landmarks[0]
+  (aggiungendo anche un controllo per assicurarti che ci sia almeno un volto rilevato).
+  5. Correggere gli argomenti passati a  ear_math : Attualmente stai passando  self.face_land_marker  e  None . Devi sostituirli passando rispettivamente i landmarks appena
+  estratti e i tuoi dizionari ( self.left_eye  per il primo,  self.right_eye  per il secondo).
+  6. Logica della Macchina a Stati (Conteggio battiti): Dopo aver ottenuto i due valori di EAR (destro e sinistro), ti manca la logica di base: confrontare la media (o entrambi)
+  con la tua soglia  self.EAR_THRESHOLD . Se il valore è sotto la soglia, aumenti  self.frameOfBlink_counter . Se supera o è uguale a  self.K_FRAME_THRESHOLD , confermi il
+  battito e chiami  self.on_blink_callback .
+
+  In  ear_math :
+  7. Sviluppare la funzione matematica: Attualmente è vuota ( pass ). Usando la lista dei landmarks, il dizionario  eye_coordinates  e le dimensioni  height  /  width :
+
+  • Devi estrarre i 6 punti specifici dell'occhio.
+  • Devi convertirli in pixel (moltiplicando le loro coordinate  x  e  y  per  width  e  height ).
+  • Devi usare  scipy.spatial.distance.euclidean  per calcolare le distanze e restituire il risultato della formula EAR.
+
+  Questo è il quadro completo di ciò che manca da completare per finire il tuo modulo di rilevamento!

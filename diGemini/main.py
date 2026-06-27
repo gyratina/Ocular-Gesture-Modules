@@ -1,12 +1,7 @@
-###
-# project: Ocular Gestures Module (OGM)
-# author-username: @gyratina on GitHub
-# author-name: Valerio Di Tommaso
-# start: 2026-06-26 (yyyy-mm-dd)
+import argparse
+import time
 
 import cv2
-import time
-import argparse
 from blinkModule import BlinkDetector
 
 
@@ -16,34 +11,42 @@ def on_blink_detected(count):
 
 def main():
     # Gestione degli argomenti da riga di comando per massima flessibilità (es. in Distrobox)
-    parser = argparse.ArgumentParser(description="Ocular Gestures Module (OGM) - Test Client")
-    parser.add_argument(
-        "--headless", "-hl", 
-        action="store_true", 
-        help="Avvia in modalità headless (senza interfaccia grafica cv2.imshow)"
+    parser = argparse.ArgumentParser(
+        description="Ocular Gestures Module (OGM) - Test Client"
     )
     parser.add_argument(
-        "--camera", "-c", 
-        type=int, 
-        default=0, 
-        help="Indice della fotocamera/webcam da utilizzare (default: 0)"
+        "--headless",
+        "-hl",
+        action="store_true",
+        help="Avvia in modalità headless (senza interfaccia grafica cv2.imshow)",
     )
     parser.add_argument(
-        "--threshold", "-t", 
-        type=float, 
-        default=0.20, 
-        help="Soglia matematica EAR (default: 0.20)"
+        "--camera",
+        "-c",
+        type=int,
+        default=0,
+        help="Indice della fotocamera/webcam da utilizzare (default: 0)",
     )
     parser.add_argument(
-        "--frames", "-f", 
-        type=int, 
-        default=3, 
-        help="Numero di frame consecutivi ad occhio chiuso per registrare un battito (default: 3)"
+        "--threshold",
+        "-t",
+        type=float,
+        default=0.20,
+        help="Soglia matematica EAR (default: 0.20)",
+    )
+    parser.add_argument(
+        "--frames",
+        "-f",
+        type=int,
+        default=3,
+        help="Numero di frame consecutivi ad occhio chiuso per registrare un battito (default: 3)",
     )
     args = parser.parse_args()
 
     # Inizializza il rilevatore di battiti
-    detector = BlinkDetector(ear_threshold=args.threshold, k_frame_threshold=args.frames)
+    detector = BlinkDetector(
+        ear_threshold=args.threshold, k_frame_threshold=args.frames
+    )
     detector.on_blink_callback = on_blink_detected
 
     print(f"Inizializzazione della fotocamera (webcam {args.camera})...")
@@ -51,7 +54,9 @@ def main():
 
     if not cap.isOpened():
         print(f"Errore: Impossibile aprire la fotocamera {args.camera}.")
-        print("Verifica che il dispositivo sia connesso ed esposto all'interno di Distrobox.")
+        print(
+            "Verifica che il dispositivo sia connesso ed esposto all'interno di Distrobox."
+        )
         print("Tip: Verifica i permessi di /dev/video* nel container.")
         detector.close()
         return
@@ -59,7 +64,9 @@ def main():
     if args.headless:
         print("Avvio in modalità HEADLESS. Premi Ctrl+C nel terminale per uscire.")
     else:
-        print("Avvio in modalità GRAFICA. Premi 'q' o 'ESC' sulla finestra video per uscire.")
+        print(
+            "Avvio in modalità GRAFICA. Premi 'q' o 'ESC' sulla finestra video per uscire."
+        )
 
     try:
         last_print_time = 0
@@ -78,12 +85,22 @@ def main():
             if args.headless:
                 # In modalità headless stampiamo periodicamente lo stato a riga di comando
                 current_time = time.time()
-                if current_time - last_print_time >= 0.2:  # Limita l'output a 5 volte al secondo
-                    status_text = "Occhi Chiusi" if (ear is not None and ear < detector.EAR_THRESHOLD) else "Occhi Aperti"
+                if (
+                    current_time - last_print_time >= 0.2
+                ):  # Limita l'output a 5 volte al secondo
+                    status_text = (
+                        "Occhi Chiusi"
+                        if (ear is not None and ear < detector.EAR_THRESHOLD)
+                        else "Occhi Aperti"
+                    )
                     ear_val = f"{ear:.3f}" if ear is not None else "N/D"
-                    print(f"\rEAR: {ear_val} | Stato: {status_text} | Battiti totali: {blink_count}", end="", flush=True)
+                    print(
+                        f"\rEAR: {ear_val} | Stato: {status_text} | Battiti totali: {blink_count}",
+                        end="",
+                        flush=True,
+                    )
                     last_print_time = current_time
-                
+
                 # Un piccolo delay per non saturare la CPU in assenza di waitKey
                 time.sleep(0.01)
             else:
@@ -110,7 +127,7 @@ def main():
                         2,
                         cv2.LINE_AA,
                     )
-                    
+
                     if ear < detector.EAR_THRESHOLD:
                         cv2.putText(
                             frame,
