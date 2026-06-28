@@ -56,5 +56,6 @@ while True:
         break
 
 # When everything done, release the capture
+blink_detector.close()
 video.release()
 cv.destroyAllWindows()

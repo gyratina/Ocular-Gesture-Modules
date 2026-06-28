@@ -37,45 +37,44 @@ class BlinkDetector:
     }
 
     # Metodo costruttore
-    def __init__(self, ear_threshold=0.16, k_frame_threshold=3, running_mode=1) -> None:
+    def __init__(
+        self,
+        ear_threshold=0.16,
+        min_blink_time_threshold=80,
+        max_blink_time_threshold=400,
+    ) -> None:
         self.EAR_THRESHOLD = ear_threshold  # Soglia di apertura dell'occhio
-        self.K_FRAME_THRESHOLD = k_frame_threshold  # Soglia del numero di fotogrammi necessari per considerare l'occhio chiuso
+        self.MIN_BLINK_TIME_THRESHOLD = min_blink_time_threshold
+        self.MAX_BLINK_TIME_THRESHOLD = max_blink_time_threshold
 
         # Contatori del numero di chiusure degli occhi
         self.left_blink_counter = 0
         self.right_blink_counter = 0
 
-        # Contatori di frame nel quale l'occhio è stato chiuso
-        self.left_blink_frametime_counter = 0
-        self.right_blink_frametime_counter = 0
+        # Contatori di tempo per il quale l'occhio è stato chiuso
+        self.left_blink_time_counter = None
+        self.right_blink_time_counter = None
+
+        # Funzione di callback per il calcolo del risultato del modello
+        self.on_blink: Callable[[], None] = None
 
         # Funzioni di callback per quando vengono sbattuti gli occhi
         self.on_left_blink_callback: Callable[[], None] = None
         self.on_right_blink_callback: Callable[[], None] = None
 
         # Percorso file del model bundle
-        self.model_path = "face_landmarker.task"
+        self.model_path = "models/face_landmarker.task"
 
         # Salva il timestamp dell'ultimo timestamp in millisecondi
         self.last_timestamp_ms: int = 0
-
-        # match che imposta la running mode
-        match running_mode:
-            case 0:
-                self.running_mode = vision.RunningMode.IMAGE
-
-            case 1:
-                self.running_mode = vision.RunningMode.VIDEO
-
-            case 2:
-                self.running_mode = vision.RunningMode.LIVE_STREAM
 
         # Impostazioni del modello di Landmarking facciale
         BaseOptions = py.BaseOptions
         FaceLandmarkerOptions = vision.FaceLandmarkerOptions(
             base_options=BaseOptions(model_asset_path=self.model_path),
-            running_mode=self.running_mode,
+            running_mode=vision.RunningMode.LIVE_STREAM,
             num_faces=1,
+            result_callback=self.mediapipe_callback,
         )
         FaceLandmarker = vision.FaceLandmarker
 
@@ -86,6 +85,26 @@ class BlinkDetector:
 
     def process_frame(self, frame, rgb):
 
+        ### Fase di preparazione dati
+
+        # Creazione oggetto mp.Image, che formatta i dati dei pixel in un formato compatibile con i modelli di MediaPipe
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+
+        # Calcolo del timestamp per ogni frame
+        frame_timestamp_ms = int(time.time() * 1000)
+        if frame_timestamp_ms <= self.last_timestamp_ms:
+            frame_timestamp_ms = self.last_timestamp_ms + 1
+        self.last_timestamp_ms = frame_timestamp_ms
+
+        ### Fase di esecuzione
+        self.face_landmarker.detect_async(mp_image, frame_timestamp_ms)
+
+    def mediapipe_callback(
+        self,
+        result: vision.FaceLandmarkerResult,
+        output_image: mp.Image,
+        timestamp_ms: int,
+    ):
         def get_pixel_coordinates(eye_dict: dict[str, int]):
             # Nuovo dizionario che invece di salvare l'indice del punto facciale, ne salva le coordinate X e Y in pixel sullo schermo
             pixel_eye_dict = {}
@@ -105,29 +124,15 @@ class BlinkDetector:
 
             return pixel_eye_dict
 
-        # Fase di preparazione dati
-        height, width, _ = frame.shape  # Ottenimento dati sulla dimensione della camera
-
-        # Creazione oggetto mp.Image, che formatta i dati dei pixel in un formato compatibile con i modelli di MediaPipe
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-
-        # Calcolo del timestamp per ogni frame
-        frame_timestamp_ms = int(time.time() * 1000)
-        if frame_timestamp_ms <= self.last_timestamp_ms:
-            frame_timestamp_ms = self.last_timestamp_ms + 1
-        self.last_timestamp_ms = frame_timestamp_ms
-
-        # Fase di esecuzione
-        face_landmarker_result = self.face_landmarker.detect_for_video(
-            mp_image, frame_timestamp_ms
-        )
-
         # Controllo se la telecamera ha trovato almeno un volto
-        if not face_landmarker_result.face_landmarks:
+        if not result.face_landmarks:
             return
 
+        # Ottenimento dati sulla dimensione della camera
+        height, width = output_image.height, output_image.width
+
         # Vengono salvati i dati in merito alla prima faccia trovata da MediaPipe (478 oggetti NormalizedLandmark)
-        face_landmarks = face_landmarker_result.face_landmarks[0]
+        face_landmarks = result.face_landmarks[0]
 
         # Traduzione dei dizionari dei punti degli occhi in coordinate X, Y dei pixel sullo schermo
         left_eye_coordinates = get_pixel_coordinates(self.left_eye)
@@ -144,31 +149,45 @@ class BlinkDetector:
         )
 
         # Filtro "Anti-Rumore" per l'occhio Sinistro
-        if sx_ear < self.EAR_THRESHOLD:
-            self.left_blink_frametime_counter += 1
+        if sx_ear < self.EAR_THRESHOLD and self.left_blink_time_counter is None:
+            self.left_blink_time_counter = timestamp_ms
         elif sx_ear >= self.EAR_THRESHOLD:
-            if self.left_blink_frametime_counter >= self.K_FRAME_THRESHOLD:
-                self.left_blink_counter += 1
-                # Chiamata a funzione di callback
-                if self.on_left_blink_callback is not None:
-                    self.on_left_blink_callback()
+            if self.left_blink_time_counter is not None:
+                blink_time = timestamp_ms - self.left_blink_time_counter
 
-            self.left_blink_frametime_counter = 0
+                if (
+                    self.MIN_BLINK_TIME_THRESHOLD
+                    <= blink_time
+                    <= self.MAX_BLINK_TIME_THRESHOLD
+                ):
+                    self.left_blink_counter += 1
+                    # Chiamata a funzione di callback
+                    if self.on_left_blink_callback is not None:
+                        self.on_left_blink_callback()
+
+            self.left_blink_time_counter = None
 
         # Filtro "Anti-Rumore" per l'occhio Destro
-        if dx_ear < self.EAR_THRESHOLD:
-            self.right_blink_frametime_counter += 1
+        if dx_ear < self.EAR_THRESHOLD and self.right_blink_time_counter is None:
+            self.right_blink_time_counter = timestamp_ms
         elif dx_ear >= self.EAR_THRESHOLD:
-            if self.right_blink_frametime_counter >= self.K_FRAME_THRESHOLD:
-                self.right_blink_counter += 1
-                # Chiamata a funzione di callback
-                if self.on_right_blink_callback is not None:
-                    self.on_right_blink_callback()
+            if self.right_blink_time_counter is not None:
+                blink_time = timestamp_ms - self.right_blink_time_counter
 
-            self.right_blink_frametime_counter = 0
+                if (
+                    self.MIN_BLINK_TIME_THRESHOLD
+                    <= blink_time
+                    <= self.MAX_BLINK_TIME_THRESHOLD
+                ):
+                    self.right_blink_counter += 1
+                    # Chiamata a funzione di callback
+                    if self.on_right_blink_callback is not None:
+                        self.on_right_blink_callback()
+
+            self.right_blink_time_counter = None
 
     def ear_math(self, eye_coordinates) -> float:
-        # Macro
+        # Aliases
         P1 = eye_coordinates["P1"]
         P2 = eye_coordinates["P2"]
         P3 = eye_coordinates["P3"]

@@ -1,3 +1,7 @@
+Comando fondamentale per far funzionare lo script dentro la distrobox:
+xhost +local:
+Eseguirlo fuori dalla distrobox
+
 In  process_frame :
 
   1. Importare OpenCV: Manca  import cv2  all'inizio del file (visto che usi  cv2.cvtColor ).
