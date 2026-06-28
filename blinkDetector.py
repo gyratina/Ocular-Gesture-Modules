@@ -47,6 +47,10 @@ class BlinkDetector:
         self.MIN_BLINK_TIME_THRESHOLD = min_blink_time_threshold
         self.MAX_BLINK_TIME_THRESHOLD = max_blink_time_threshold
 
+        # Tolleranza della differenza accettabile affinché si possa distinguere un occhio chiuso involontariamente
+        # per il tiraggio della pelle nel tentativo di chiuderne uno solo
+        self.EAR_DIFF = 0.05
+
         # Contatori del numero di chiusure degli occhi
         self.left_blink_counter = 0
         self.right_blink_counter = 0
@@ -148,10 +152,14 @@ class BlinkDetector:
             eye_coordinates=right_eye_coordinates,
         )
 
+        is_left_eye_closed = sx_ear < self.EAR_THRESHOLD
+        is_right_eye_closed = dx_ear < self.EAR_THRESHOLD
+
         # Filtro "Anti-Rumore" per l'occhio Sinistro
-        if sx_ear < self.EAR_THRESHOLD and self.left_blink_time_counter is None:
-            self.left_blink_time_counter = timestamp_ms
-        elif sx_ear >= self.EAR_THRESHOLD:
+        if is_left_eye_closed and (dx_ear - sx_ear) > self.EAR_DIFF:
+            if is_left_eye_closed and self.left_blink_time_counter is None:
+                self.left_blink_time_counter = timestamp_ms
+        elif not is_left_eye_closed:
             if self.left_blink_time_counter is not None:
                 blink_time = timestamp_ms - self.left_blink_time_counter
 
@@ -168,9 +176,10 @@ class BlinkDetector:
             self.left_blink_time_counter = None
 
         # Filtro "Anti-Rumore" per l'occhio Destro
-        if dx_ear < self.EAR_THRESHOLD and self.right_blink_time_counter is None:
-            self.right_blink_time_counter = timestamp_ms
-        elif dx_ear >= self.EAR_THRESHOLD:
+        if is_right_eye_closed and (sx_ear - dx_ear) > self.EAR_DIFF:
+            if self.right_blink_time_counter is None:
+                self.right_blink_time_counter = timestamp_ms
+        elif not is_right_eye_closed:
             if self.right_blink_time_counter is not None:
                 blink_time = timestamp_ms - self.right_blink_time_counter
 

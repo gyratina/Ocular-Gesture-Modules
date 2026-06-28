@@ -7,6 +7,8 @@
 # file-name: blinkDetector.py
 ###
 
+from time import sleep
+
 import cv2 as cv
 from pynput.keyboard import Controller, Key
 
@@ -26,9 +28,8 @@ tastiera = Controller()
 
 def on_left_blink():
     print("Sbattuto Occhio SINISTRO\n")
-    with tastiera.pressed(Key.cmd_l):
-        tastiera.press("a")
-        tastiera.release("a")
+    tastiera.press(Key.cmd_l)
+    tastiera.release(Key.cmd_l)
 
 
 def on_right_blink():
