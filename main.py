@@ -20,6 +20,13 @@ if not video.isOpened():
     print("Impossibile aprire la telecamera.\n")
     exit()
 
+if video.get(cv.CAP_PROP_FRAME_WIDTH) > 1280:
+    video.set(cv.CAP_PROP_FRAME_WIDTH, 1280)
+if video.get(cv.CAP_PROP_FRAME_HEIGHT) > 720:
+    video.set(cv.CAP_PROP_FRAME_HEIGHT, 720)
+
+video.set(cv.CAP_PROP_FPS, 30)
+
 # Istanziamento di BlinkDetector
 blink_detector = BlinkDetector()
 

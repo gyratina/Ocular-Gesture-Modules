@@ -115,10 +115,10 @@ class BlinkDetector:
 
             for key, index in eye_dict.items():
                 # Dai dati del volto, viene estratto il punto del volto equivalente all'indice iterato e assegnato a face_point_data.
-                # Essendo che ogni punto del volto ha 3 attributi X, Y, Z, adesso face_point_data ha i 3 punti di face_landmarks[index]
+                # Essendo che ogni punto del volto ha 3 attributi X, e Y adesso face_point_data ha i 3 punti di face_landmarks[index]
                 face_point_data = face_landmarks[index]
 
-                # A ogni iterazione viene aggiunto al nuovo dizionario il prodotto tra gli attributi delle coordinate X e Y di face_point_data
+                # A ogni iterazione viene aggiunto al nuovo dizionario il prodotto tra gli attributi delle coordinate X, Y, Z di face_point_data
                 # e la larghezza e altezza del frame.
                 # Il prodotto viene racchiuso in un np.array[...] (vettore di NumPy), in quanto la funzione dist.euclidian usata nel
                 # metodo ear_math richiede che i punti facciali siano formattati in questa maniera.
@@ -157,7 +157,7 @@ class BlinkDetector:
 
         # Filtro "Anti-Rumore" per l'occhio Sinistro
         if is_left_eye_closed and (dx_ear - sx_ear) > self.EAR_DIFF:
-            if is_left_eye_closed and self.left_blink_time_counter is None:
+            if self.left_blink_time_counter is None:
                 self.left_blink_time_counter = timestamp_ms
         elif not is_left_eye_closed:
             if self.left_blink_time_counter is not None:
