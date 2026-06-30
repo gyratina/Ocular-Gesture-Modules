@@ -7,7 +7,6 @@
 # file-name: blinkDetector.py
 ###
 
-from time import sleep
 
 import cv2 as cv
 from pynput.keyboard import Controller, Key
@@ -56,7 +55,7 @@ while True:
 
     rgb_frame = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
 
-    blink_detector.process_frame(frame=frame, rgb=rgb_frame)
+    blink_detector.frame_preparation(frame=frame, rgb=rgb_frame)
 
     # Display the resulting frame
     cv.imshow("frame", frame)
