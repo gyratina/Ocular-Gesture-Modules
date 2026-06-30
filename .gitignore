@@ -1,9 +1,9 @@
 /.venv
-__pycache__/**
+__pycache__/
 /diGemini
 /models
 
 appunti.txt
-designDoc.md
+designDoc.mdz
 pyrightconfig.json
 tasks.json

@@ -8,28 +8,9 @@
 ###
 
 
-import cv2 as cv
 from pynput.keyboard import Controller, Key
 
 from blinkDetector import BlinkDetector
-
-video = cv.VideoCapture(1)
-
-if not video.isOpened():
-    print("Impossibile aprire la telecamera.\n")
-    exit()
-
-if video.get(cv.CAP_PROP_FRAME_WIDTH) > 1280:
-    video.set(cv.CAP_PROP_FRAME_WIDTH, 1280)
-if video.get(cv.CAP_PROP_FRAME_HEIGHT) > 720:
-    video.set(cv.CAP_PROP_FRAME_HEIGHT, 720)
-
-video.set(cv.CAP_PROP_FPS, 30)
-
-# Istanziamento di BlinkDetector
-blink_detector = BlinkDetector()
-
-tastiera = Controller()
 
 
 def on_left_blink():
@@ -42,27 +23,21 @@ def on_right_blink():
     print("Sbattuto Occhio DESTRO\n")
 
 
+# Istanziamento di BlinkDetector
+blink_detector = BlinkDetector()
+
+
+def on_calibration(left_eye: float, right_eye: float):
+    blink_detector.left_ear_threshold = left_eye
+    blink_detector.left_ear_threshold = right_eye
+    print("Calibrazione completata.\n")
+    print(f"EAR SINISTRO: {left_eye} EAR DESTRO: {right_eye}")
+
+
+tastiera = Controller()
+
 blink_detector.on_left_blink_callback = on_left_blink
 blink_detector.on_right_blink_callback = on_right_blink
+blink_detector.on_calibration_callback = on_calibration
 
-
-while True:
-    status, frame = video.read()
-
-    if not status:
-        print("Errore, impossibile trovare un fotogramma.")
-        break
-
-    rgb_frame = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
-
-    blink_detector.frame_preparation(frame=frame, rgb=rgb_frame)
-
-    # Display the resulting frame
-    cv.imshow("frame", frame)
-    if cv.waitKey(1) == ord("q"):
-        break
-
-# When everything done, release the capture
-blink_detector.close()
-video.release()
-cv.destroyAllWindows()
+blink_detector.start(mode="detect")

@@ -11,6 +11,7 @@
 import time
 from typing import Callable
 
+import cv2 as cv
 import mediapipe as mp
 import numpy as np
 from mediapipe.tasks import python as py
@@ -44,19 +45,24 @@ class BlinkDetector:
         right_ear_threshold: float = 0.16,
         min_blink_time_threshold: int = 80,
         max_blink_time_threshold: int = 400,
+        ear_diff: float = 0.05,
+        on_calibration_complete: Callable[[float, float], None] | None = None,
     ) -> None:
         # Soglie di apertura dell'occhio
         # self.EAR_THRESHOLD: float = ear_threshold  # Soglia di apertura dell'occhio
-        self.LEFT_EAR_THRESHOLD: float = left_ear_threshold
-        self.RIGHT_EAR_THRESHOLD: float = right_ear_threshold
-        self.MIN_BLINK_TIME_THRESHOLD: int = min_blink_time_threshold
-        self.MAX_BLINK_TIME_THRESHOLD: int = max_blink_time_threshold
+        self.left_ear_threshold: float = left_ear_threshold
+        self.right_ear_threshold: float = right_ear_threshold
+        self.min_blink_time_threshold: int = min_blink_time_threshold
+        self.max_blink_time_threshold: int = max_blink_time_threshold
 
-        # Tolleranza della differenza accettabile affinché si possa distinguere un occhio chiuso involontariamente
+        # Tolleranza della differenza di tipo EAR accettabile affinché si possa distinguere un occhio chiuso involontariamente
         # per il tiraggio della pelle nel tentativo di chiuderne uno solo
-        self.EAR_DIFF: float = 0.05
+        self.ear_diff: float = ear_diff
 
-        self.is_calibrating: bool =
+        self.is_calibrating: bool = False
+        self.on_calibration_callback: Callable[[float, float], None] | None = (
+            on_calibration_complete
+        )
 
         # Contatori del numero di chiusure degli occhi
         self.left_blink_counter: int = 0
@@ -142,11 +148,11 @@ class BlinkDetector:
             return pixel_eye_dict
 
         def precision_filter():
-            is_left_eye_closed: bool = sx_ear < self.LEFT_EAR_THRESHOLD
-            is_right_eye_closed: bool = dx_ear < self.RIGHT_EAR_THRESHOLD
+            is_left_eye_closed: bool = sx_ear < self.left_ear_threshold
+            is_right_eye_closed: bool = dx_ear < self.right_ear_threshold
 
             # Filtro "Anti-Rumore" per l'occhio Sinistro
-            if is_left_eye_closed and (dx_ear - sx_ear) > self.EAR_DIFF:
+            if is_left_eye_closed and (dx_ear - sx_ear) > self.ear_diff:
                 if self.left_blink_time_counter is None:
                     self.left_blink_time_counter = timestamp_ms
             elif not is_left_eye_closed:
@@ -154,9 +160,9 @@ class BlinkDetector:
                     blink_time = timestamp_ms - self.left_blink_time_counter
 
                     if (
-                        self.MIN_BLINK_TIME_THRESHOLD
+                        self.min_blink_time_threshold
                         <= blink_time
-                        <= self.MAX_BLINK_TIME_THRESHOLD
+                        <= self.max_blink_time_threshold
                     ):
                         self.left_blink_counter += 1
                         # Chiamata a funzione di callback
@@ -166,7 +172,7 @@ class BlinkDetector:
                 self.left_blink_time_counter = None
 
             # Filtro "Anti-Rumore" per l'occhio Destro
-            if is_right_eye_closed and (sx_ear - dx_ear) > self.EAR_DIFF:
+            if is_right_eye_closed and (sx_ear - dx_ear) > self.ear_diff:
                 if self.right_blink_time_counter is None:
                     self.right_blink_time_counter = timestamp_ms
             elif not is_right_eye_closed:
@@ -174,9 +180,9 @@ class BlinkDetector:
                     blink_time = timestamp_ms - self.right_blink_time_counter
 
                     if (
-                        self.MIN_BLINK_TIME_THRESHOLD
+                        self.min_blink_time_threshold
                         <= blink_time
-                        <= self.MAX_BLINK_TIME_THRESHOLD
+                        <= self.max_blink_time_threshold
                     ):
                         self.right_blink_counter += 1
                         # Chiamata a funzione di callback
@@ -209,8 +215,9 @@ class BlinkDetector:
             eye_coordinates=right_eye_coordinates,
         )
 
-        # Chiamata alla funzione
-        if self.CALIBRATION:
+        # Se la calibrazione è impostata su True allora avvia la calibrazione,
+        # altrimenti continua filtrando le gesture e chiamando funzioni di callback
+        if self.is_calibrating:
             self.calibration(sx_ear=sx_ear, dx_ear=dx_ear, timestamp_ms=timestamp_ms)
         else:
             precision_filter()
@@ -245,16 +252,58 @@ class BlinkDetector:
         time_elapsed = timestamp_ms - self.calib_start_time
 
         if time_elapsed >= 3000:
-            AVG_LEFT_EAR: float = self.sum_left_ear / self.count_ear
-            AVG_RIGHT_EAR: float = self.sum_right_ear / self.count_ear
+            AVG_LEFT_EAR: float = (self.sum_left_ear / self.count_ear) * 0.75
+            AVG_RIGHT_EAR: float = (self.sum_right_ear / self.count_ear) * 0.75
 
-            self.LEFT_EAR_THRESHOLD = AVG_LEFT_EAR
-            self.RIGHT_EAR_THRESHOLD = AVG_RIGHT_EAR
-
-            print("Calibrazione completata.\n")
-            print(
-                f"EAR SINISTRO: {self.LEFT_EAR_THRESHOLD} EAR DESTRO: {self.RIGHT_EAR_THRESHOLD}"
-            )
-
-            self.CALIBRATION = False
+            self.is_calibrating = False
             self.calib_start_time = None
+
+            if self.on_calibration_callback is not None:
+                self.on_calibration_callback(AVG_LEFT_EAR, AVG_RIGHT_EAR)
+
+    def start(self, mode: str = "detect"):
+        match mode:
+            case "calibrate":
+                self.is_calibrating = True
+                self.calib_start_time = None
+                print("Avvio telecamera in modalità CALIBRAZIONE.")
+            case _:
+                self.is_calibrating = False
+                print("Avvio telecamera in modalità RILEVAMENTO.")
+
+        video = cv.VideoCapture(1)
+
+        if not video.isOpened():
+            print("Impossibile aprire la telecamera.\n")
+            exit()
+
+        if video.get(cv.CAP_PROP_FRAME_WIDTH) > 1280:
+            video.set(cv.CAP_PROP_FRAME_WIDTH, 1280)
+        if video.get(cv.CAP_PROP_FRAME_HEIGHT) > 720:
+            video.set(cv.CAP_PROP_FRAME_HEIGHT, 720)
+
+        video.set(cv.CAP_PROP_FPS, 30)
+
+        while True:
+            status, frame = video.read()
+
+            if not status:
+                print("Errore, impossibile trovare un fotogramma.")
+                break
+
+            rgb_frame = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
+
+            self.frame_preparation(frame=frame, rgb=rgb_frame)
+
+            if mode == "calibrate" and self.is_calibrating is False:
+                break
+
+            # Display the resulting frame
+            cv.imshow("frame", frame)
+            if cv.waitKey(1) == ord("q"):
+                break
+
+        # When everything done, release the capture
+        self.close()
+        video.release()
+        cv.destroyAllWindows()
