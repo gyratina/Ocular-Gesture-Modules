@@ -16,11 +16,10 @@ from typing import Callable
 import cv2 as cv
 import mediapipe as mp
 import numpy as np
+from camera_config import CameraConfig
 from mediapipe.tasks import python as py
 from mediapipe.tasks.python import vision
 from scipy.spatial import distance as dist
-
-from camera_config import CameraConfig
 
 log: logging.Logger = logging.getLogger(f"OGM.{__name__}")
 
@@ -29,6 +28,7 @@ class ActionType(Enum):
     """
     Enumeration representing the different types of detected ocular gestures.
     """
+
     LEFT = 0
     RIGHT = 1
     BOTH = 2
@@ -39,6 +39,7 @@ class BlinkDetector:
     Core detector class that processes frames to identify and record voluntary ocular gestures (blinks).
     Supports single eye and both eyes gestures, featuring a state-machine based precision filter.
     """
+
     left_eye: dict[str, int] = {
         "P1": 263,  # Angolo esterno
         "P2": 385,  # Palpebra superiore
@@ -65,6 +66,7 @@ class BlinkDetector:
         max_blink_time_threshold: int = 500,
         ear_diff: float = 0.05,
         model_path: str | None = None,
+        calibration_threshold_ratio: float = 0.75,
     ) -> None:
         """
         Initializes the BlinkDetector with specific thresholds for gesture detection.
@@ -94,6 +96,7 @@ class BlinkDetector:
         self.ear_diff: float = ear_diff
 
         self.is_calibrating: bool = False
+        self.calibration_threshold_ratio: float = calibration_threshold_ratio
         self.on_calibration_callback: Callable[[float, float], None] | None = None
 
         self.last_action: ActionType | None = None
@@ -316,8 +319,12 @@ class BlinkDetector:
         time_elapsed = timestamp_ms - self.calib_start_time
 
         if time_elapsed >= 3000:
-            AVG_LEFT_EAR: float = (self.sum_left_ear / self.count_ear) * 0.75
-            AVG_RIGHT_EAR: float = (self.sum_right_ear / self.count_ear) * 0.75
+            AVG_LEFT_EAR: float = (
+                self.sum_left_ear / self.count_ear
+            ) * self.calibration_threshold_ratio
+            AVG_RIGHT_EAR: float = (
+                self.sum_right_ear / self.count_ear
+            ) * self.calibration_threshold_ratio
 
             self.is_calibrating = False
             self.calib_start_time = None
