@@ -316,7 +316,7 @@ class BlinkDetector:
         self.sum_right_ear += dx_ear
         self.count_ear += 1
 
-        time_elapsed = timestamp_ms - self.calib_start_time
+        time_elapsed: int = timestamp_ms - self.calib_start_time
 
         if time_elapsed >= 3000:
             AVG_LEFT_EAR: float = (
