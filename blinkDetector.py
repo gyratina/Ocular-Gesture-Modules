@@ -1,5 +1,5 @@
 ###
-# project: Ocular Gestures Module (OGM)
+# project: Ocular Gesture Modules (OGM)
 # project-start: 2026-06-26 (yyyy-mm-dd)
 # author-username: @gyratina on GitHub
 # author-name: Valerio Di Tommaso
@@ -9,6 +9,7 @@
 
 
 import time
+from enum import Enum
 from typing import Callable
 
 import cv2 as cv
@@ -16,8 +17,13 @@ import mediapipe as mp
 import numpy as np
 from mediapipe.tasks import python as py
 from mediapipe.tasks.python import vision
-from numpy.core.numeric import ndarray
 from scipy.spatial import distance as dist
+
+
+class ActionType(Enum):
+    LEFT = 0
+    RIGHT = 1
+    BOTH = 2
 
 
 class BlinkDetector:
@@ -44,25 +50,27 @@ class BlinkDetector:
         left_ear_threshold: float = 0.16,
         right_ear_threshold: float = 0.16,
         min_blink_time_threshold: int = 80,
-        max_blink_time_threshold: int = 400,
+        max_blink_time_threshold: int = 500,
         ear_diff: float = 0.05,
-        on_calibration_complete: Callable[[float, float], None] | None = None,
     ) -> None:
         # Soglie di apertura dell'occhio
         # self.EAR_THRESHOLD: float = ear_threshold  # Soglia di apertura dell'occhio
         self.left_ear_threshold: float = left_ear_threshold
         self.right_ear_threshold: float = right_ear_threshold
+
+        # Soglia minima e massima per considerare il battito volontario
         self.min_blink_time_threshold: int = min_blink_time_threshold
         self.max_blink_time_threshold: int = max_blink_time_threshold
+
+        self.actions: list[tuple[ActionType, int | None]] = []
+        self.last_reopening_timestamp: int | None = None
 
         # Tolleranza della differenza di tipo EAR accettabile affinché si possa distinguere un occhio chiuso involontariamente
         # per il tiraggio della pelle nel tentativo di chiuderne uno solo
         self.ear_diff: float = ear_diff
 
         self.is_calibrating: bool = False
-        self.on_calibration_callback: Callable[[float, float], None] | None = (
-            on_calibration_complete
-        )
+        self.on_calibration_callback: Callable[[float, float], None] | None = None
 
         # Contatori del numero di chiusure degli occhi
         self.left_blink_counter: int = 0
@@ -71,11 +79,13 @@ class BlinkDetector:
         # Contatori di tempo per il quale l'occhio è stato chiuso
         self.left_blink_time_counter: int | None = None
         self.right_blink_time_counter: int | None = None
+        self.both_blink_time_counter: int | None = None
 
-        # Funzione di callback per il calcolo del risultato del modello
-        self.on_blink: Callable[[], None] = lambda: None
+        # Funzioni di callback per quando viene effettuata una gesture con il battito delle ciglia
+        self.on_blink: Callable[[list[tuple[ActionType, int | None]]], None] | None = (
+            None
+        )
 
-        # Funzioni di callback per quando vengono sbattuti gli occhi
         self.on_left_blink_callback: Callable[[], None] = lambda: None
         self.on_right_blink_callback: Callable[[], None] = lambda: None
 
@@ -103,10 +113,14 @@ class BlinkDetector:
 
         self.face_landmarker = FaceLandmarker.create_from_options(FaceLandmarkerOptions)
 
-    def close(self):
+    def close(self) -> None:
         self.face_landmarker.close()
 
-    def frame_preparation(self, frame, rgb):
+    def reset_log(self) -> None:
+        self.actions.clear()
+        self.last_reopening_timestamp = None
+
+    def frame_preparation(self, frame, rgb) -> None:
 
         ### Fase di preparazione dati
 
@@ -127,7 +141,7 @@ class BlinkDetector:
         result: vision.FaceLandmarkerResult,
         output_image: mp.Image,
         timestamp_ms: int,
-    ):
+    ) -> None:
         def get_pixel_coordinates(eye_dict: dict[str, int]) -> dict[str, np.ndarray]:
             # Nuovo dizionario che invece di salvare l'indice del punto facciale, ne salva le coordinate X e Y in pixel sullo schermo
             pixel_eye_dict: dict[str, np.ndarray] = {}
@@ -147,49 +161,82 @@ class BlinkDetector:
 
             return pixel_eye_dict
 
-        def precision_filter():
+        def precision_filter() -> None:
             is_left_eye_closed: bool = sx_ear < self.left_ear_threshold
             is_right_eye_closed: bool = dx_ear < self.right_ear_threshold
+            are_both_eyes_closed: bool = is_left_eye_closed and is_right_eye_closed
+            reopening_moment: int | None = None
+            lapse: int | None = None
 
-            # Filtro "Anti-Rumore" per l'occhio Sinistro
+            # Filtro per identificare lo sbattito Sinistro
             if is_left_eye_closed and (dx_ear - sx_ear) > self.ear_diff:
                 if self.left_blink_time_counter is None:
                     self.left_blink_time_counter = timestamp_ms
             elif not is_left_eye_closed:
                 if self.left_blink_time_counter is not None:
-                    blink_time = timestamp_ms - self.left_blink_time_counter
+                    reopening_moment = timestamp_ms
+                    blink_time: int = reopening_moment - self.left_blink_time_counter
 
                     if (
                         self.min_blink_time_threshold
                         <= blink_time
                         <= self.max_blink_time_threshold
                     ):
-                        self.left_blink_counter += 1
+                        if not self.actions and self.last_reopening_timestamp is None:
+                            self.actions.append((ActionType.LEFT, None))
+                            self.last_reopening_timestamp = reopening_moment
+
+                        elif self.last_reopening_timestamp is not None:
+                            lapse = (
+                                self.left_blink_time_counter
+                                - self.last_reopening_timestamp
+                            )
+                            self.actions[-1] = (self.actions[-1][0], lapse)
+                            self.actions.append((ActionType.LEFT, None))
+                            self.last_reopening_timestamp = reopening_moment
+
                         # Chiamata a funzione di callback
-                        if self.on_left_blink_callback is not None:
-                            self.on_left_blink_callback()
+                        if self.on_blink is not None:
+                            self.on_blink(self.actions)
 
                 self.left_blink_time_counter = None
 
-            # Filtro "Anti-Rumore" per l'occhio Destro
+            # Filtro per identificare lo sbattito Destro
             if is_right_eye_closed and (sx_ear - dx_ear) > self.ear_diff:
                 if self.right_blink_time_counter is None:
                     self.right_blink_time_counter = timestamp_ms
             elif not is_right_eye_closed:
                 if self.right_blink_time_counter is not None:
-                    blink_time = timestamp_ms - self.right_blink_time_counter
+                    reopening_moment = timestamp_ms
+                    blink_time = reopening_moment - self.right_blink_time_counter
 
                     if (
                         self.min_blink_time_threshold
                         <= blink_time
                         <= self.max_blink_time_threshold
                     ):
-                        self.right_blink_counter += 1
+                        if not self.actions and self.last_reopening_timestamp is None:
+                            self.actions.append((ActionType.RIGHT, None))
+                            self.last_reopening_timestamp = reopening_moment
+                        elif self.last_reopening_timestamp is not None:
+                            lapse = (
+                                self.right_blink_time_counter
+                                - self.last_reopening_timestamp
+                            )
+                            self.actions[-1] = (self.actions[-1][0], lapse)
+                            self.actions.append((ActionType.RIGHT, None))
+                            self.last_reopening_timestamp = reopening_moment
+
                         # Chiamata a funzione di callback
-                        if self.on_right_blink_callback is not None:
-                            self.on_right_blink_callback()
+                        if self.on_blink is not None:
+                            self.on_blink(self.actions)
 
                 self.right_blink_time_counter = None
+
+            # Filtro per identificare lo sbattito di entrambi gli occhi
+
+            if are_both_eyes_closed:
+                pass
 
         # Controllo se la telecamera ha trovato almeno un volto
         if not result.face_landmarks:
@@ -238,7 +285,7 @@ class BlinkDetector:
 
         return EAR
 
-    def calibration(self, sx_ear: float, dx_ear: float, timestamp_ms: int):
+    def calibration(self, sx_ear: float, dx_ear: float, timestamp_ms: int) -> None:
         if self.calib_start_time is None:
             self.calib_start_time = timestamp_ms
             print(
@@ -261,7 +308,7 @@ class BlinkDetector:
             if self.on_calibration_callback is not None:
                 self.on_calibration_callback(AVG_LEFT_EAR, AVG_RIGHT_EAR)
 
-    def start(self, mode: str = "detect"):
+    def start(self, mode: str = "detect") -> None:
         match mode:
             case "calibrate":
                 self.is_calibrating = True
