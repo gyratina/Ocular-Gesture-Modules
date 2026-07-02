@@ -26,12 +26,19 @@ log: logging.Logger = logging.getLogger(f"OGM.{__name__}")
 
 
 class ActionType(Enum):
+    """
+    Enumeration representing the different types of detected ocular gestures.
+    """
     LEFT = 0
     RIGHT = 1
     BOTH = 2
 
 
 class BlinkDetector:
+    """
+    Core detector class that processes frames to identify and record voluntary ocular gestures (blinks).
+    Supports single eye and both eyes gestures, featuring a state-machine based precision filter.
+    """
     left_eye: dict[str, int] = {
         "P1": 263,  # Angolo esterno
         "P2": 385,  # Palpebra superiore
@@ -59,6 +66,17 @@ class BlinkDetector:
         ear_diff: float = 0.05,
         model_path: str | None = None,
     ) -> None:
+        """
+        Initializes the BlinkDetector with specific thresholds for gesture detection.
+
+        Args:
+            left_ear_threshold (float): EAR threshold to consider the left eye closed.
+            right_ear_threshold (float): EAR threshold to consider the right eye closed.
+            min_blink_time_threshold (int): Minimum duration (ms) for a closure to be considered a voluntary blink.
+            max_blink_time_threshold (int): Maximum duration (ms) for a closure to be considered a voluntary blink.
+            ear_diff (float): Tolerance for EAR difference to avoid false asymmetrical blink triggers (e.g. skin pulling).
+            model_path (str | None): Absolute path to the MediaPipe Face Landmarker model. If None, uses the bundled model.
+        """
         # Soglie di apertura dell'occhio
         # self.EAR_THRESHOLD: float = ear_threshold  # Soglia di apertura dell'occhio
         self.left_ear_threshold: float = left_ear_threshold
@@ -121,9 +139,15 @@ class BlinkDetector:
         self.face_landmarker = FaceLandmarker.create_from_options(FaceLandmarkerOptions)
 
     def close(self) -> None:
+        """
+        Closes the underlying MediaPipe face landmarker instance and releases its resources.
+        """
         self.face_landmarker.close()
 
     def reset_log(self) -> None:
+        """
+        Clears the logged actions and resets the combo timer. Usually called after a combo is successfully matched.
+        """
         self.actions.clear()
         self.last_reopening_timestamp = None
 
@@ -254,6 +278,15 @@ class BlinkDetector:
             precision_filter()
 
     def ear_math(self, eye_coordinates) -> float:
+        """
+        Calculates the Eye Aspect Ratio (EAR) based on the 6 facial landmarks defining an eye.
+
+        Args:
+            eye_coordinates (dict): A dictionary mapping 'P1' through 'P6' to numpy coordinate arrays.
+
+        Returns:
+            float: The computed EAR value for the given eye.
+        """
         # Aliases
         P1 = eye_coordinates["P1"]
         P2 = eye_coordinates["P2"]
@@ -295,6 +328,13 @@ class BlinkDetector:
     def start(
         self, mode: str = "detect", camera_config: CameraConfig | None = None
     ) -> None:
+        """
+        Starts the internal camera loop and processes frames synchronously.
+
+        Args:
+            mode (str): Operational mode. Use "calibrate" for threshold calibration or "detect" for gesture recognition.
+            camera_config (CameraConfig | None): Custom camera configuration. If None, default 720p 30fps config is used.
+        """
         match mode:
             case "calibrate":
                 self.is_calibrating = True
