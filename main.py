@@ -8,24 +8,21 @@
 ###
 
 
+import logging
+
 from pynput.keyboard import Controller, Key
 
-from blinkDetector import ActionType, BlinkDetector
+from blink_detector import ActionType, BlinkDetector
+from camera_config import CameraConfig
+
+logging.basicConfig(
+    level=logging.DEBUG, format="%(name)s - %(levelname)s - %(message)s"
+)
 
 tastiera = Controller()
 
 # Istanziamento di BlinkDetector
 blink_detector = BlinkDetector()
-
-
-def on_left_blink():
-    print("Sbattuto Occhio SINISTRO\n")
-    tastiera.press(Key.cmd_l)
-    tastiera.release(Key.cmd_l)
-
-
-def on_right_blink():
-    print("Sbattuto Occhio DESTRO\n")
 
 
 def elabora_combinazioni(azioni: list[tuple[ActionType, int | None]]):
@@ -78,7 +75,7 @@ def on_calibration(left_eye: float, right_eye: float):
 
 
 blink_detector.on_blink = elabora_combinazioni
-
 blink_detector.on_calibration_callback = on_calibration
 
-blink_detector.start(mode="detect")
+my_camera = CameraConfig(camera_index=1)
+blink_detector.start(mode="detect", camera_config=my_camera)

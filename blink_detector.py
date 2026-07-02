@@ -7,7 +7,8 @@
 # file-name: blinkDetector.py
 ###
 
-
+import logging
+import os
 import time
 from enum import Enum
 from typing import Callable
@@ -18,6 +19,10 @@ import numpy as np
 from mediapipe.tasks import python as py
 from mediapipe.tasks.python import vision
 from scipy.spatial import distance as dist
+
+from camera_config import CameraConfig
+
+log: logging.Logger = logging.getLogger(f"OGM.{__name__}")
 
 
 class ActionType(Enum):
@@ -52,6 +57,7 @@ class BlinkDetector:
         min_blink_time_threshold: int = 80,
         max_blink_time_threshold: int = 500,
         ear_diff: float = 0.05,
+        model_path: str | None = None,
     ) -> None:
         # Soglie di apertura dell'occhio
         # self.EAR_THRESHOLD: float = ear_threshold  # Soglia di apertura dell'occhio
@@ -72,11 +78,9 @@ class BlinkDetector:
         self.is_calibrating: bool = False
         self.on_calibration_callback: Callable[[float, float], None] | None = None
 
-        # Contatori del numero di chiusure degli occhi
-        self.left_blink_counter: int = 0
-        self.right_blink_counter: int = 0
-
+        self.last_action: ActionType | None = None
         # Contatori di tempo per il quale l'occhio è stato chiuso
+        self.blink_time_counter: int | None = None
         self.left_blink_time_counter: int | None = None
         self.right_blink_time_counter: int | None = None
         self.both_blink_time_counter: int | None = None
@@ -86,11 +90,14 @@ class BlinkDetector:
             None
         )
 
-        self.on_left_blink_callback: Callable[[], None] = lambda: None
-        self.on_right_blink_callback: Callable[[], None] = lambda: None
-
         # Percorso file del model bundle
-        self.model_path: str = "models/face_landmarker.task"
+        if model_path is None:
+            current_directory: str = os.path.dirname(__file__)
+            self.model_path: str = os.path.join(
+                current_directory, "models", "face_landmarker.task"
+            )
+        else:
+            self.model_path = model_path
 
         # Salva il timestamp dell'ultimo timestamp in millisecondi
         self.last_timestamp_ms: int = 0
@@ -165,78 +172,55 @@ class BlinkDetector:
             is_left_eye_closed: bool = sx_ear < self.left_ear_threshold
             is_right_eye_closed: bool = dx_ear < self.right_ear_threshold
             are_both_eyes_closed: bool = is_left_eye_closed and is_right_eye_closed
+            left_eye_filter: bool = (
+                is_left_eye_closed and (dx_ear - sx_ear) > self.ear_diff
+            )
+            right_eye_filter: bool = (
+                is_right_eye_closed and (sx_ear - dx_ear) > self.ear_diff
+            )
+
             reopening_moment: int | None = None
             lapse: int | None = None
 
-            # Filtro per identificare lo sbattito Sinistro
-            if is_left_eye_closed and (dx_ear - sx_ear) > self.ear_diff:
-                if self.left_blink_time_counter is None:
-                    self.left_blink_time_counter = timestamp_ms
-            elif not is_left_eye_closed:
-                if self.left_blink_time_counter is not None:
-                    reopening_moment = timestamp_ms
-                    blink_time: int = reopening_moment - self.left_blink_time_counter
-
-                    if (
-                        self.min_blink_time_threshold
-                        <= blink_time
-                        <= self.max_blink_time_threshold
-                    ):
-                        if not self.actions and self.last_reopening_timestamp is None:
-                            self.actions.append((ActionType.LEFT, None))
-                            self.last_reopening_timestamp = reopening_moment
-
-                        elif self.last_reopening_timestamp is not None:
-                            lapse = (
-                                self.left_blink_time_counter
-                                - self.last_reopening_timestamp
-                            )
-                            self.actions[-1] = (self.actions[-1][0], lapse)
-                            self.actions.append((ActionType.LEFT, None))
-                            self.last_reopening_timestamp = reopening_moment
-
-                        # Chiamata a funzione di callback
-                        if self.on_blink is not None:
-                            self.on_blink(self.actions)
-
-                self.left_blink_time_counter = None
-
-            # Filtro per identificare lo sbattito Destro
-            if is_right_eye_closed and (sx_ear - dx_ear) > self.ear_diff:
-                if self.right_blink_time_counter is None:
-                    self.right_blink_time_counter = timestamp_ms
-            elif not is_right_eye_closed:
-                if self.right_blink_time_counter is not None:
-                    reopening_moment = timestamp_ms
-                    blink_time = reopening_moment - self.right_blink_time_counter
-
-                    if (
-                        self.min_blink_time_threshold
-                        <= blink_time
-                        <= self.max_blink_time_threshold
-                    ):
-                        if not self.actions and self.last_reopening_timestamp is None:
-                            self.actions.append((ActionType.RIGHT, None))
-                            self.last_reopening_timestamp = reopening_moment
-                        elif self.last_reopening_timestamp is not None:
-                            lapse = (
-                                self.right_blink_time_counter
-                                - self.last_reopening_timestamp
-                            )
-                            self.actions[-1] = (self.actions[-1][0], lapse)
-                            self.actions.append((ActionType.RIGHT, None))
-                            self.last_reopening_timestamp = reopening_moment
-
-                        # Chiamata a funzione di callback
-                        if self.on_blink is not None:
-                            self.on_blink(self.actions)
-
-                self.right_blink_time_counter = None
-
-            # Filtro per identificare lo sbattito di entrambi gli occhi
-
+            current_action: ActionType | None = None
             if are_both_eyes_closed:
-                pass
+                current_action = ActionType.BOTH
+            elif left_eye_filter:
+                current_action = ActionType.LEFT
+            elif right_eye_filter:
+                current_action = ActionType.RIGHT
+
+            if current_action is not None and self.blink_time_counter is None:
+                self.blink_time_counter = timestamp_ms
+
+            if current_action != self.last_action:
+                if self.blink_time_counter is not None and self.last_action is not None:
+                    reopening_moment = timestamp_ms
+                    blink_time: int = reopening_moment - self.blink_time_counter
+
+                    if (
+                        self.min_blink_time_threshold
+                        <= blink_time
+                        <= self.max_blink_time_threshold
+                    ):
+                        if not self.actions and self.last_reopening_timestamp is None:
+                            self.actions.append((self.last_action, None))
+                            self.last_reopening_timestamp = reopening_moment
+
+                        elif self.last_reopening_timestamp is not None:
+                            lapse = (
+                                self.blink_time_counter - self.last_reopening_timestamp
+                            )
+                            self.actions[-1] = (self.actions[-1][0], lapse)
+                            self.actions.append((self.last_action, None))
+                            self.last_reopening_timestamp = reopening_moment
+
+                        # Chiamata a funzione di callback
+                        if self.on_blink is not None:
+                            self.on_blink(self.actions)
+
+                self.last_action = current_action
+                self.blink_time_counter = None
 
         # Controllo se la telecamera ha trovato almeno un volto
         if not result.face_landmarks:
@@ -288,7 +272,7 @@ class BlinkDetector:
     def calibration(self, sx_ear: float, dx_ear: float, timestamp_ms: int) -> None:
         if self.calib_start_time is None:
             self.calib_start_time = timestamp_ms
-            print(
+            log.info(
                 "Inizio calibrazione: Guarda la telecamera con espressione neutra per 3 secondi.\n"
             )
 
@@ -308,34 +292,28 @@ class BlinkDetector:
             if self.on_calibration_callback is not None:
                 self.on_calibration_callback(AVG_LEFT_EAR, AVG_RIGHT_EAR)
 
-    def start(self, mode: str = "detect") -> None:
+    def start(
+        self, mode: str = "detect", camera_config: CameraConfig | None = None
+    ) -> None:
         match mode:
             case "calibrate":
                 self.is_calibrating = True
                 self.calib_start_time = None
-                print("Avvio telecamera in modalità CALIBRAZIONE.")
+                log.info("Avvio telecamera in modalità CALIBRAZIONE.")
             case _:
                 self.is_calibrating = False
-                print("Avvio telecamera in modalità RILEVAMENTO.")
+                log.info("Avvio telecamera in modalità RILEVAMENTO.")
 
-        video = cv.VideoCapture(1)
+        if camera_config is None:
+            camera_config = CameraConfig()
 
-        if not video.isOpened():
-            print("Impossibile aprire la telecamera.\n")
-            exit()
-
-        if video.get(cv.CAP_PROP_FRAME_WIDTH) > 1280:
-            video.set(cv.CAP_PROP_FRAME_WIDTH, 1280)
-        if video.get(cv.CAP_PROP_FRAME_HEIGHT) > 720:
-            video.set(cv.CAP_PROP_FRAME_HEIGHT, 720)
-
-        video.set(cv.CAP_PROP_FPS, 30)
+        video: cv.VideoCapture = camera_config.set_camera()
 
         while True:
             status, frame = video.read()
 
             if not status:
-                print("Errore, impossibile trovare un fotogramma.")
+                log.error("Errore, impossibile trovare un fotogramma.")
                 break
 
             rgb_frame = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
