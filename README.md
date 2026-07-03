@@ -15,7 +15,7 @@ pip install .
 
 Alternatively:
 ```bash
-pip install ogm
+pip install ogm-vision
 ```
 
 
