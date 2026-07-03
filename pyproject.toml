@@ -3,8 +3,8 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ogm"
-version = "0.1.1"
+name = "ogm-vision"
+version = "0.1.0"
 authors = [
   { name="Valerio Di Tommaso", email="contact.me@valerioditommaso.dev" },
 ]

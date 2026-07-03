@@ -18,15 +18,17 @@ Alternatively:
 pip install ogm
 ```
 
+
+---
+
+## Usage
+
 > [!WARNING]
 > **OGM IS IN ACTIVE DEVELOPMENT**
 > 
 > It is highly likely that the way to do certain things with OGM might change frequently across versions, as the library is still in early development.
 > To get an idea of what's coming, check out the roadmap below.
 
----
-
-## Usage
 I have included DocStrings within the API files, so if any information is missing here, you should still have access to everything you need right in your IDE.
 
 ***Usage Example:***
@@ -113,6 +115,14 @@ if __name__ == "__main__":
 	# ...
 	blink_detector.close()
 ```
+
+---
+
+## Acknowledgments & Legal
+This library is built as a wrapper and mathematical layer on top of [Google MediaPipe](https://developers.google.com/mediapipe) for high-performance, real-time facial landmark detection. 
+
+The OGM library bundles the `face_landmarker.task` model, which is provided by Google under the **Apache License 2.0**. 
+For more details, please refer to the official [MediaPipe repository](https://github.com/google-ai-edge/mediapipe).
 
 ---
 
