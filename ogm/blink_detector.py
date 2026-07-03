@@ -9,6 +9,7 @@
 
 import logging
 import os
+import threading
 import time
 from enum import Enum
 from typing import Callable
@@ -16,10 +17,11 @@ from typing import Callable
 import cv2 as cv
 import mediapipe as mp
 import numpy as np
-from camera_config import CameraConfig
 from mediapipe.tasks import python as py
 from mediapipe.tasks.python import vision
 from scipy.spatial import distance as dist
+
+from .camera_config import CameraConfig
 
 log: logging.Logger = logging.getLogger(f"OGM.{__name__}")
 
@@ -78,7 +80,11 @@ class BlinkDetector:
             max_blink_time_threshold (int): Maximum duration (ms) for a closure to be considered a voluntary blink.
             ear_diff (float): Tolerance for EAR difference to avoid false asymmetrical blink triggers (e.g. skin pulling).
             model_path (str | None): Absolute path to the MediaPipe Face Landmarker model. If None, uses the bundled model.
+            calibration_threshold_ratio (float): Ratio applied to the calculated EAR average during calibration (default is 0.75).
         """
+        # Flag per indicare lo stato di esecuzione dell'API
+        self.is_running: bool | None = None
+
         # Soglie di apertura dell'occhio
         # self.EAR_THRESHOLD: float = ear_threshold  # Soglia di apertura dell'occhio
         self.left_ear_threshold: float = left_ear_threshold
@@ -143,9 +149,10 @@ class BlinkDetector:
 
     def close(self) -> None:
         """
-        Closes the underlying MediaPipe face landmarker instance and releases its resources.
+        Signals the internal execution loop to stop, which will smoothly release the camera and MediaPipe resources.
         """
-        self.face_landmarker.close()
+        self.is_running = False
+        log.info("Esecuzione modulo API terminata.")
 
     def reset_log(self) -> None:
         """
@@ -332,16 +339,19 @@ class BlinkDetector:
             if self.on_calibration_callback is not None:
                 self.on_calibration_callback(AVG_LEFT_EAR, AVG_RIGHT_EAR)
 
-    def start(
+    def _execution_loop(
         self, mode: str = "detect", camera_config: CameraConfig | None = None
     ) -> None:
         """
-        Starts the internal camera loop and processes frames synchronously.
+        Internal method that runs the camera loop and processes frames synchronously.
+        This is automatically executed in a background daemon thread by start().
 
         Args:
             mode (str): Operational mode. Use "calibrate" for threshold calibration or "detect" for gesture recognition.
             camera_config (CameraConfig | None): Custom camera configuration. If None, default 720p 30fps config is used.
         """
+        self.is_running = True
+
         match mode:
             case "calibrate":
                 self.is_calibrating = True
@@ -356,7 +366,7 @@ class BlinkDetector:
 
         video: cv.VideoCapture = camera_config.set_camera()
 
-        while True:
+        while self.is_running:
             status, frame = video.read()
 
             if not status:
@@ -370,12 +380,21 @@ class BlinkDetector:
             if mode == "calibrate" and self.is_calibrating is False:
                 break
 
-            # Display the resulting frame
-            cv.imshow("frame", frame)
-            if cv.waitKey(1) == ord("q"):
-                break
-
-        # When everything done, release the capture
-        self.close()
+        self.face_landmarker.close()
         video.release()
-        cv.destroyAllWindows()
+
+    def start(
+        self, mode: str = "detect", camera_config: CameraConfig | None = None
+    ) -> None:
+        """
+        Starts the gesture detection asynchronously in a background daemon thread.
+        Does not block the main thread.
+
+        Args:
+            mode (str): Operational mode. Use "calibrate" for threshold calibration or "detect" for gesture recognition.
+            camera_config (CameraConfig | None): Custom camera configuration. If None, default 720p 30fps config is used.
+        """
+        ogm_thread = threading.Thread(
+            target=self._execution_loop, args=(mode, camera_config), daemon=True
+        )
+        ogm_thread.start()

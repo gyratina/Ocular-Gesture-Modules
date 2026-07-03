@@ -33,6 +33,9 @@ class CameraConfig:
 
         Returns:
             cv.VideoCapture: The configured OpenCV video capture object.
+
+        Raises:
+            RuntimeError: If the camera cannot be opened.
         """
         video: cv.VideoCapture = cv.VideoCapture(self.camera_index)
         if not video.isOpened():

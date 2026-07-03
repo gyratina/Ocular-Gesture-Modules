@@ -3,8 +3,19 @@ __pycache__/
 /diGemini
 /models
 
+# Documenti interni e file di test
 appunti.txt
 designDoc.md
 pyrightconfig.json
 tasks.json
 main.py
+
+# Build e Packaging di Python
+dist/
+build/
+*.egg-info/
+*.whl
+*.tar.gz
+
+# File di sistema operativo (macOS)
+.DS_Store

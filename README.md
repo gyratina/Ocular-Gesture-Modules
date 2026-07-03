@@ -18,10 +18,10 @@ Alternatively:
 pip install ogm
 ```
 
-> **WARNING: OGM IS IN ACTIVE DEVELOPMENT!**
->
-> It is highly likely that the way to do certain things with OGM might change frequently across versions, as the library is still in early development.
+> [!WARNING]
+> **OGM IS IN ACTIVE DEVELOPMENT**
 > 
+> It is highly likely that the way to do certain things with OGM might change frequently across versions, as the library is still in early development.
 > To get an idea of what's coming, check out the roadmap below.
 
 ---
@@ -80,6 +80,12 @@ if __name__ == "__main__":
 	# Configuration of the camera
 	my_camera = CameraConfig()  # Remember to set it to 0 if you only have one camera!
 	blink_detector.start(mode="detect", camera_config=my_camera)
+	# ...
+	# ...
+	# Your code...
+	# ...
+	# ...
+	blink_detector.close()
 ```
 
 ***You can also perform automatic calibration:***
@@ -100,6 +106,12 @@ if __name__ == "__main__":
 	# Configuration of the camera
 	my_camera = CameraConfig()  # Remember to set it to 0 if you only have one camera!
 	blink_detector.start(mode="calibrate", camera_config=my_camera)
+	# ...
+	# ...
+	# Your code...
+	# ...
+	# ...
+	blink_detector.close()
 ```
 
 ---
@@ -125,4 +137,4 @@ The roadmap I have set for the development of this API is:
 ###
 ```
 
-To learn more about me, check <a href="https://valerioditommaso.dev/en">my website</a>.
+**To learn more about me, check <a href="https://valerioditommaso.dev/en">my website</a>.**
