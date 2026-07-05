@@ -31,89 +31,79 @@ pip install ogm-vision
 
 I have included DocStrings within the API files, so if any information is missing here, you should still have access to everything you need right in your IDE.
 
-***Usage Example:***
+***Usage Example (Calibration & Detection):***
 ```python
+import time
 from ogm import ActionType, BlinkDetector, CameraConfig
 
+# Initialize the detector - You can adjust the threshold severity here if needed
+blink_detector = BlinkDetector(calibration_threshold_ratio=0.60)
 
-blink_detector = BlinkDetector()
-
-# Your callback function to handle actions
-def on_actions(azioni: list[tuple[ActionType, int | None]]):
-	match azioni:
-		# If the user blinks the left eye
-		case [(ActionType.LEFT, _)]:
-			#
-			# ANYTHING YOU WANT TO BE DONE
-			#
-			blink_detector.reset_log()
-
-		# If the user blinks both eyes
-		case [(ActionType.BOTH, _)]:
-			#
-			# ANYTHING YOU WANT TO BE DONE
-			#
-			blink_detector.reset_log()
-
-		# Combo example: Right eye followed by Left eye (max pause 1000ms)
-		case [*_, (ActionType.RIGHT, pause), (ActionType.LEFT, _)]:
-			if pause is not None and pause <= 1000:
-				#
-				# ANYTHING YOU WANT TO BE DONE
-				#
-				blink_detector.reset_log()
-		
-		# Wait state: If the user blinks the right eye (waiting for combo)
-		case [*_, (ActionType.RIGHT, _)]:
-			#
-			# ANYTHING YOU WANT TO BE DONE
-			#
-			pass
-
-		# Any other sequence of actions is ignored
-		case _:
-			pass
-		
-
-if __name__ == "__main__":
-	# Callback binding
-	blink_detector.on_blink = on_actions
-	
-	# Configuration of the camera
-	my_camera = CameraConfig()  # Remember to set it to 0 if you only have one camera!
-	blink_detector.start(mode="detect", camera_config=my_camera)
-	# ...
-	# ...
-	# Your code...
-	# ...
-	# ...
-	blink_detector.close()
-```
-
-***You can also perform automatic calibration:***
-```python
-# ... 
-# ...
-# ...
-# Your callback function for auto-calibration
+# Define the callback for automatic calibration
 def on_calibration(left_eye: float, right_eye: float):
-	blink_detector.left_ear_threshold = left_eye
-	blink_detector.right_ear_threshold = right_eye
-	
+    print(f"Calibration finished.\nLeft EAR: {left_eye:.3f}, Right EAR: {right_eye:.3f}")
+    blink_detector.left_ear_threshold = left_eye
+    blink_detector.right_ear_threshold = right_eye
+
+# Define the callback to handle gesture sequences
+def on_actions(actions: list[tuple[ActionType, int]]):
+    match actions:
+        # Single blink of the left eye
+        case [(ActionType.LEFT, _)]:
+            print("Action: LEFT BLINK")
+            blink_detector.reset_log()
+
+        # Single blink of both eyes
+        case [(ActionType.BOTH, _)]:
+            print("Action: BOTH EYES BLINK")
+            blink_detector.reset_log()
+
+        # Combo example: Right eye + Left eye (max pause 800ms)
+        case [*_, (ActionType.RIGHT, p), (ActionType.LEFT, _)] if p <= 800:
+            print(f"Action: RIGHT -> LEFT (pause: {p}ms)")
+            blink_detector.reset_log()
+
+        # Wait state: The user blinked the right eye, waiting for combo
+        case [*_, (ActionType.RIGHT, _)]:
+            print("Waiting for complete combo...")
+            pass
+
+        # Ignore any other sequence
+        case _:
+            pass
+
 if __name__ == "__main__":
-	# Callback bindings
-	blink_detector.on_blink = on_actions
-	blink_detector.on_calibration_callback = on_calibration
-	
-	# Configuration of the camera
-	my_camera = CameraConfig()  # Remember to set it to 0 if you only have one camera!
-	blink_detector.start(mode="calibrate", camera_config=my_camera)
-	# ...
-	# ...
-	# Your code...
-	# ...
-	# ...
-	blink_detector.close()
+    # Bind callbacks
+    blink_detector.on_blink = on_actions
+    blink_detector.on_calibration_callback = on_calibration
+    
+    # Configure camera (use 0 for default webcam)
+    my_camera = CameraConfig()
+    
+    # Calibration Phase
+    print("Starting Calibration. Please look at the camera with a neutral expression for 3 seconds...")
+    blink_detector.start(mode="calibrate", camera_config=my_camera)
+    
+    # Wait for the background thread to finish the 3-second calibration
+    time.sleep(3.5)
+    
+    # Safely close the calibration thread and release resources
+    blink_detector.close()
+    
+    # Gesture Detection Phase
+    print("Starting Gesture Detection...")
+    blink_detector.start(mode="detect", camera_config=my_camera)
+    
+    try:
+        # Keep the main thread alive while the background daemon thread does the work.
+        # ---> YOU CAN RUN YOUR OWN APPLICATION LOOP OR GUI HERE <---
+        while True:    # This cycle is only for testing the API
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nExiting...")
+    finally:
+        # Always remember to safely release resources on exit
+        blink_detector.close()
 ```
 
 ---

@@ -66,9 +66,10 @@ class BlinkDetector:
         right_ear_threshold: float = 0.16,
         min_blink_time_threshold: int = 80,
         max_blink_time_threshold: int = 500,
+        max_combo_delay: int = 2000,
         ear_diff: float = 0.05,
         model_path: str | None = None,
-        calibration_threshold_ratio: float = 0.75,
+        calibration_threshold_ratio: float = 0.60,
     ) -> None:
         """
         Initializes the BlinkDetector with specific thresholds for gesture detection.
@@ -78,12 +79,16 @@ class BlinkDetector:
             right_ear_threshold (float): EAR threshold to consider the right eye closed.
             min_blink_time_threshold (int): Minimum duration (ms) for a closure to be considered a voluntary blink.
             max_blink_time_threshold (int): Maximum duration (ms) for a closure to be considered a voluntary blink.
+            max_combo_delay (int): Maximum delay (ms) allowed between consecutive blinks to be grouped into the same combo.
             ear_diff (float): Tolerance for EAR difference to avoid false asymmetrical blink triggers (e.g. skin pulling).
             model_path (str | None): Absolute path to the MediaPipe Face Landmarker model. If None, uses the bundled model.
             calibration_threshold_ratio (float): Ratio applied to the calculated EAR average during calibration (default is 0.75).
         """
         # Flag per indicare lo stato di esecuzione dell'API
         self.is_running: bool | None = None
+
+        # Salvataggio del thread per permettere al metodo close() di terminare l'esecuzione
+        self.ogm_thread: threading.Thread | None = None
 
         # Soglie di apertura dell'occhio
         # self.EAR_THRESHOLD: float = ear_threshold  # Soglia di apertura dell'occhio
@@ -94,7 +99,9 @@ class BlinkDetector:
         self.min_blink_time_threshold: int = min_blink_time_threshold
         self.max_blink_time_threshold: int = max_blink_time_threshold
 
-        self.actions: list[tuple[ActionType, int | None]] = []
+        self.max_combo_delay: int = max_combo_delay
+
+        self.actions: list[tuple[ActionType, int]] = []
         self.last_reopening_timestamp: int | None = None
 
         # Tolleranza della differenza di tipo EAR accettabile affinché si possa distinguere un occhio chiuso involontariamente
@@ -113,9 +120,7 @@ class BlinkDetector:
         self.both_blink_time_counter: int | None = None
 
         # Funzioni di callback per quando viene effettuata una gesture con il battito delle ciglia
-        self.on_blink: Callable[[list[tuple[ActionType, int | None]]], None] | None = (
-            None
-        )
+        self.on_blink: Callable[[list[tuple[ActionType, int]]], None] | None = None
 
         # Percorso file del model bundle
         if model_path is None:
@@ -135,23 +140,17 @@ class BlinkDetector:
         self.count_ear: int = 0
         self.calib_start_time: int | None = None
 
-        # Impostazioni del modello di Landmarking facciale
-        BaseOptions = py.BaseOptions
-        FaceLandmarkerOptions = vision.FaceLandmarkerOptions(
-            base_options=BaseOptions(model_asset_path=self.model_path),
-            running_mode=vision.RunningMode.LIVE_STREAM,
-            num_faces=1,
-            result_callback=self.mediapipe_callback,
-        )
-        FaceLandmarker = vision.FaceLandmarker
-
-        self.face_landmarker = FaceLandmarker.create_from_options(FaceLandmarkerOptions)
+        # Face landmarker configuration
+        self.face_landmarker: vision.FaceLandmarker | None = None
 
     def close(self) -> None:
         """
         Signals the internal execution loop to stop, which will smoothly release the camera and MediaPipe resources.
+        This method will safely block (join) the calling thread until the background execution thread has completely terminated.
         """
         self.is_running = False
+        if self.ogm_thread is not None:
+            self.ogm_thread.join()
         log.info("Esecuzione modulo API terminata.")
 
     def reset_log(self) -> None:
@@ -171,11 +170,12 @@ class BlinkDetector:
         # Calcolo del timestamp per ogni frame
         frame_timestamp_ms: int = int(time.time() * 1000)
         if frame_timestamp_ms <= self.last_timestamp_ms:
-            frame_timestamp_ms: int = self.last_timestamp_ms + 1
+            frame_timestamp_ms = self.last_timestamp_ms + 1
         self.last_timestamp_ms = frame_timestamp_ms
 
         ### Fase di esecuzione
-        self.face_landmarker.detect_async(mp_image, frame_timestamp_ms)
+        if self.face_landmarker is not None:
+            self.face_landmarker.detect_async(mp_image, frame_timestamp_ms)
 
     def mediapipe_callback(
         self,
@@ -217,12 +217,12 @@ class BlinkDetector:
             lapse: int | None = None
 
             current_action: ActionType | None = None
-            if are_both_eyes_closed:
-                current_action = ActionType.BOTH
-            elif left_eye_filter:
+            if left_eye_filter:
                 current_action = ActionType.LEFT
             elif right_eye_filter:
                 current_action = ActionType.RIGHT
+            elif are_both_eyes_closed:
+                current_action = ActionType.BOTH
 
             if current_action is not None and self.blink_time_counter is None:
                 self.blink_time_counter = timestamp_ms
@@ -238,16 +238,21 @@ class BlinkDetector:
                         <= self.max_blink_time_threshold
                     ):
                         if not self.actions and self.last_reopening_timestamp is None:
-                            self.actions.append((self.last_action, None))
+                            self.actions.append((self.last_action, 0))
                             self.last_reopening_timestamp = reopening_moment
 
                         elif self.last_reopening_timestamp is not None:
                             lapse = (
                                 self.blink_time_counter - self.last_reopening_timestamp
                             )
-                            self.actions[-1] = (self.actions[-1][0], lapse)
-                            self.actions.append((self.last_action, None))
-                            self.last_reopening_timestamp = reopening_moment
+                            if lapse > self.max_combo_delay:
+                                self.actions.clear()
+                                self.actions.append((self.last_action, 0))
+                                self.last_reopening_timestamp = reopening_moment
+                            else:
+                                self.actions[-1] = (self.actions[-1][0], lapse)
+                                self.actions.append((self.last_action, 0))
+                                self.last_reopening_timestamp = reopening_moment
 
                         # Chiamata a funzione di callback
                         if self.on_blink is not None:
@@ -345,6 +350,8 @@ class BlinkDetector:
         """
         Internal method that runs the camera loop and processes frames synchronously.
         This is automatically executed in a background daemon thread by start().
+        It initializes the MediaPipe FaceLandmarker natively within this thread to ensure memory safety
+        and avoid threading issues upon restart, and resets calibration accumulators to prevent stale data.
 
         Args:
             mode (str): Operational mode. Use "calibrate" for threshold calibration or "detect" for gesture recognition.
@@ -352,10 +359,27 @@ class BlinkDetector:
         """
         self.is_running = True
 
+        # Impostazioni del modello di Landmarking facciale
+        BaseOptions = py.BaseOptions
+        FaceLandmarkerOptions = vision.FaceLandmarkerOptions(
+            base_options=BaseOptions(model_asset_path=self.model_path),
+            running_mode=vision.RunningMode.LIVE_STREAM,
+            num_faces=1,
+            result_callback=self.mediapipe_callback,
+        )
+        FaceLandmarker = vision.FaceLandmarker
+
+        self.face_landmarker = FaceLandmarker.create_from_options(FaceLandmarkerOptions)
+
         match mode:
             case "calibrate":
                 self.is_calibrating = True
                 self.calib_start_time = None
+
+                self.sum_left_ear = 0.0
+                self.sum_right_ear = 0.0
+                self.count_ear = 0
+
                 log.info("Avvio telecamera in modalità CALIBRAZIONE.")
             case _:
                 self.is_calibrating = False
@@ -388,13 +412,14 @@ class BlinkDetector:
     ) -> None:
         """
         Starts the gesture detection asynchronously in a background daemon thread.
-        Does not block the main thread.
+        Does not block the main thread. The thread instance is saved in `self.ogm_thread`
+        so it can be properly joined by the `close()` method to prevent segmentation faults.
 
         Args:
             mode (str): Operational mode. Use "calibrate" for threshold calibration or "detect" for gesture recognition.
             camera_config (CameraConfig | None): Custom camera configuration. If None, default 720p 30fps config is used.
         """
-        ogm_thread = threading.Thread(
+        self.ogm_thread = threading.Thread(
             target=self._execution_loop, args=(mode, camera_config), daemon=True
         )
-        ogm_thread.start()
+        self.ogm_thread.start()

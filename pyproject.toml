@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ogm-vision"
-version = "0.1.1"
+version = "0.1.2"
 authors = [
   { name="Valerio Di Tommaso", email="contact.me@valerioditommaso.dev" },
 ]
-description = "Ocular Gesture Modules (OGM) - API per il rilevamento di gesture oculari."
+description = "Ocular Gesture Modules (OGM) - API for eye gesture detection."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
@@ -24,6 +24,11 @@ dependencies = [
     "numpy",
     "scipy"
 ]
+
+[project.urls]
+"Homepage" = "https://github.com/gyratina/Ocular-Gesture-Modules"
+"Repository" = "https://github.com/gyratina/Ocular-Gesture-Modules"
+"Bug Tracker" = "https://github.com/gyratina/Ocular-Gesture-Modules/issues"
 
 [tool.setuptools.packages.find]
 include = ["ogm*"]
