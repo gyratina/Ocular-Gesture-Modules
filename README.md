@@ -1,8 +1,10 @@
 # Ocular Gesture Modules (OGM)
 
-**OGM** is a Python API (for now) that allows the implementation of highly customizable eye gestures.
+**OGM** is a Python API that allows the implementation of highly customizable eye gestures.
 
 Currently, OGM supports only blinking gestures. These are fully customizable, allowing the API user to build potentially infinite combinations of actions (RAM permitting).
+> [!WARNING]
+> At the moment, if you move your head up or down, the API take it as a false blink. I'm working out to fix it in the next version 0.1.3.
 
 ---
 
@@ -118,12 +120,13 @@ For more details, please refer to the official [MediaPipe repository](https://gi
 
 ## Development Roadmap
 The roadmap I have set for the development of this API is:
-1. Blinking gestures module <-- **In Testing Phase**
-2. Eye movement gestures module.
-3. Eyebrow movement gestures module.
-4. Hand movement gestures module.
-5. Rewriting the core API in C++/Rust (yet to be decided).
-6. Creating bindings for C++/Rust to other languages.
+1. Blinking gestures module <-- **Work in progress at 80% (v0.1.3?)**
+2. Hand movement gestures module. (v0.2.0)
+3. Eyebrow movement gestures module. (v0.3.0)
+4. Eye movement gestures module. (v0.4.0)
+5. Rewriting the core API in C++ and Rust. (v1.0.0)
+6. Creating bindings for JavaScript. (v1.1.0)
+7. Creating bindings for Dart (v1.2.0)
 
 ---
 
